@@ -1,0 +1,268 @@
+###############################################################################
+## .htaccess based on the security htaccess from the Piwik forums
+##
+## Based on version 2.5 (proposed) of May 16th, 2011 (proposed 2.5.5 wiki doc
+## history verstion by G1smd of May 17th, 2011) Joomla .haccess file
+## example under http://docs.joomla.org/Htaccess_examples_%28security%29
+##
+###############################################################################
+
+########## Begin - RewriteEngine enabled
+#RewriteEngine On
+########## End - RewriteEngine enabled
+
+########## Begin - No directory listings
+## Note: +FollowSymlinks may cause problems and you might have to remove it
+IndexIgnore *
+Options +FollowSymLinks All -Indexes
+########## End - No directory listings
+
+########## Begin - ETag Optimization
+## This rule will create an ETag for files based only on the modification
+## timestamp and their size. This works wonders if you are using rsync'ed
+## servers, where the inode number of identical files differs.
+## Note: It may cause problems on your server and you may need to remove it
+# FileETag MTime Size
+########## End - ETag Optimization
+
+# Code taken from "Other useful settings" of http://docs.joomla.org/Htaccess_examples_(security)
+ServerSignature Off
+
+# Disable all methods except GET and POST, as only those are needed
+# (Note: TRACE does not seem to be possible to disable in .htaccess, only in server config by the host)
+RewriteCond %{REQUEST_METHOD} !^(GET|POST) [NC]
+# Return 405 Method Not Allowed
+RewriteRule .* - [R=405,L]
+
+RewriteCond %{THE_REQUEST} (\\r|\\n|%0A|%0D) [NC,OR]
+RewriteCond %{HTTP_REFERER} (<|>|’|%0A|%0D|%27|%3C|%3E|%00) [NC,OR]
+RewriteCond %{HTTP_COOKIE} (<|>|’|%0A|%0D|%27|%3C|%3E|%00) [NC,OR]
+RewriteCond %{REQUEST_URI} ^/(,|;|:|<|>|”>|”<|/|\\\.\.\\).{0,9999} [NC,OR]
+
+#Block mySQL injects
+RewriteCond %{QUERY_STRING} (;|<|>|’|”|\)|%0A|%0D|%22|%27|%3C|%3E|%00).*(/\*|union|select|insert|cast|set|declare|drop|update|md5|benchmark) [NC,OR]
+RewriteCond %{QUERY_STRING} \.\./\.\. [OR]
+RewriteCond %{QUERY_STRING} (localhost|loopback|127\.0\.0\.1) [NC,OR]
+# Comment by jawsmith: commented following out, as otherwise error by the world map widget (flash)
+#RewriteCond %{QUERY_STRING} \.[a-z0-9] [NC,OR]
+RewriteCond %{QUERY_STRING} (<|>|’|%0A|%0D|%27|%3C|%3E|%00) [NC]
+# Note: The final RewriteCond must NOT use the [OR] flag.
+
+# Return 403 Forbidden
+RewriteRule .* - [F]
+
+########## Begin - Rewrite rules to block out some common exploits
+## If you experience problems on your site block out the operations listed below
+## This attempts to block the most common type of exploit `attempts` to Joomla!
+#
+# If the request query string contains /proc/self/environ (by SigSiu.net)
+RewriteCond %{QUERY_STRING} proc/self/environ [OR]
+# Block out any script trying to set a mosConfig value through the URL
+# (these attacks wouldn't work w/out Joomla! 1.5's Legacy Mode plugin)
+RewriteCond %{QUERY_STRING} mosConfig_[a-zA-Z_]{1,21}(=|\%3D) [OR]
+# Block out any script trying to base64_encode or base64_decode data within the URL
+RewriteCond %{QUERY_STRING} base64_(en|de)code[^(]*\([^)]*\) [OR]
+## IMPORTANT: If the above line throws an HTTP 500 error, replace it with these 2 lines:
+# RewriteCond %{QUERY_STRING} base64_encode\(.*\) [OR]
+# RewriteCond %{QUERY_STRING} base64_decode\(.*\) [OR]
+# Block out any script that includes a <script> tag in URL
+RewriteCond %{QUERY_STRING} (<|%3C)([^s]*s)+cript.*(>|%3E) [NC,OR]
+# Block out any script trying to set a PHP GLOBALS variable via URL
+RewriteCond %{QUERY_STRING} GLOBALS(=|[|\%[0-9A-Z]{0,2}) [OR]
+# Block out any script trying to modify a _REQUEST variable via URL
+RewriteCond %{QUERY_STRING} _REQUEST(=|[|\%[0-9A-Z]{0,2})
+# Return 403 Forbidden
+RewriteRule .* - [F]
+#
+########## End - Rewrite rules to block out some common exploits
+
+########## Begin - File injection protection, by SigSiu.net
+RewriteCond %{REQUEST_METHOD} GET
+RewriteCond %{QUERY_STRING} [a-zA-Z0-9_]=http:// [OR]
+RewriteCond %{QUERY_STRING} [a-zA-Z0-9_]=(\.\.//?)+ [OR]
+RewriteCond %{QUERY_STRING} [a-zA-Z0-9_]=/([a-z0-9_.]//?)+ [NC]
+RewriteRule .* - [F]
+########## End - File injection protection
+
+########## Begin - Advanced server protection - query strings, referrer and config
+# Advanced server protection, version 3.2 - May 2011
+# by Nicholas K. Dionysopoulos
+
+## Disallow PHP Easter Eggs (can be used in fingerprinting attacks to determine
+## your PHP version). See http://www.0php.com/php_easter_egg.php and
+## http://osvdb.org/12184 for more information
+RewriteCond %{QUERY_STRING} \=PHP[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12} [NC]
+RewriteRule .* - [F]
+
+## SQLi first line of defense, thanks to Radek Suski (SigSiu.net) @
+## http://www.sigsiu.net/presentations/fortifying_your_joomla_website.html
+## May cause problems on legitimate requests
+RewriteCond %{QUERY_STRING} concat[^\(]*\( [NC,OR]
+RewriteCond %{QUERY_STRING} union([^s]*s)+elect [NC,OR]
+RewriteCond %{QUERY_STRING} union([^a]*a)+ll([^s]*s)+elect [NC]
+RewriteRule .* - [F]
+
+########## End - Advanced server protection - query strings, referrer and config
+
+########################################################################
+# Added by jawsmith: sub-domain prevention and www requirement (redirect with code 301 ("moved permanently")
+# in the same rule
+# Notes: 1. If you want to do it separately, or use https, refer to Joomla reference htaccess implementation
+#        2. This needs to be done before the below file protection exceptions,
+#           so that the redirect occurs before the exceptions are accessed.
+#        3. Replace test.example.com with your own domain
+########################################################################
+#RewriteCond %{HTTP_HOST} !^www\.test\.example\.com$
+#RewriteRule ^(.*)$ http://www.test.example.com/$1 [R=301,L]
+
+########## Begin - Advanced server protection rules exceptions ####
+##
+## These are sample exceptions to the Advanced Server Protection 3.1
+## rule set further down this file.
+##
+## Allow robots exclusion file
+RewriteRule ^robots\.txt$ - [L]
+
+########## End - Advanced server protection rules exceptions ####
+
+<IfModule mod_expires.c>
+  ExpiresByType text/html "access plus 1 hour"
+  <FilesMatch ".*\.(js|css|lens|png|ico|ttf|woff)$">
+    ExpiresDefault "access plus 2 hours"
+  </FilesMatch>
+</IfModule>
+## Uncomment the following block to force SSL when accessing /admin
+# <IfModule mod_rewrite.c>
+#	RewriteEngine On
+# 	RewriteCond %{REQUEST_URI} /admin/
+# 	RewriteCond %{SERVER_PORT} 80
+# 	RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+# </IfModule>
+
+####### DO NOT EDIT BELOW THIS LINE ########
+
+#MARK#######################################
+########	KOKEN .htaccess rules	########
+############################################
+
+## Make sure settings.css.lens is rendered as CSS
+AddType text/css .lens
+
+## SVG MIME type as some servers don't have it
+AddType image/svg+xml .svg
+
+## UTF-8 encoding for everything
+AddDefaultCharset utf-8
+
+DirectoryIndex index.php index.html
+
+## Enable gzip.
+## Highly recommended as it will increase speed for
+## both the console and your published site.
+<IfModule mod_deflate.c>
+	AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/json application/javascript application/x-javascript
+</IfModule>
+## END gzip
+
+## Rewrite Rules (Pretty URLs)
+## These rules remove index.php/ from your published site links
+## and also speed up the serving of cached images.
+<IfModule mod_rewrite.c>
+	RewriteEngine On
+	RewriteBase /
+
+	# Pass images requests back to PHP if they do not exist
+	RewriteCond %{REQUEST_METHOD} =GET
+	RewriteCond %{REQUEST_FILENAME} !-f
+	RewriteCond %{REQUEST_URI} /storage/cache/images(/(([0-9]{3}/[0-9]{3})|custom)/.*)$
+	RewriteRule . /i.php?path=%1 [L]
+
+	# Catch root requests (pjax)
+	RewriteCond %{REQUEST_METHOD} =GET
+	RewriteCond %{REQUEST_URI} ^/?$
+	RewriteCond %{QUERY_STRING} _pjax=
+	RewriteCond %{DOCUMENT_ROOT}/storage/cache/site/index/cache.phtml -f
+	RewriteRule .* /storage/cache/site/index/cache.phtml [L]
+
+	# Catch root requests
+	RewriteCond %{REQUEST_METHOD} =GET
+	RewriteCond %{REQUEST_URI} ^/?$
+	RewriteCond %{QUERY_STRING} !_pjax=
+	RewriteCond %{DOCUMENT_ROOT}/storage/cache/site/index/cache.html -f
+	RewriteRule .* /storage/cache/site/index/cache.html [L]
+
+	# Catch site requests (pjax)
+	RewriteCond %{REQUEST_METHOD} =GET
+	RewriteCond %{QUERY_STRING} _pjax=
+	RewriteCond %{DOCUMENT_ROOT}/storage/cache/site%{REQUEST_URI}cache.phtml -f
+	RewriteRule . /storage/cache/site%{REQUEST_URI}cache.phtml [L]
+
+	# Catch site requests
+	RewriteCond %{REQUEST_METHOD} =GET
+	RewriteCond %{QUERY_STRING} !_pjax=
+	RewriteCond %{HTTP_COOKIE} !share_to_tumblr=
+	RewriteCond %{DOCUMENT_ROOT}/storage/cache/site%{REQUEST_URI}cache.html -f
+	RewriteRule . /storage/cache/site%{REQUEST_URI}cache.html [L]
+
+	# CSS / RSS caching
+	RewriteCond %{REQUEST_METHOD} =GET
+	RewriteCond %{REQUEST_FILENAME} !-f
+	RewriteCond %{DOCUMENT_ROOT}/storage/cache/site%{REQUEST_URI} -f
+	RewriteRule . /storage/cache/site%{REQUEST_URI} [L]
+
+	# Rewrite any old URLs that still use index.php?/this/that syntax
+	RewriteCond %{QUERY_STRING} ^/(.*)
+	RewriteRule ^index.php %1? [R,L]
+
+	# Rewrite any old URLs that still use index.php/this/that syntax
+	RewriteRule ^index.php/(.*)$ $1 [R,L]
+
+	# Catch root requests
+	RewriteRule ^(index.php)?$ /app/site/site.php?url=/ [L,QSA]
+
+	# Do not enable path rewriting for files that exist
+	RewriteCond %{REQUEST_FILENAME} !-f
+	RewriteCond %{REQUEST_FILENAME} !-d
+	RewriteCond	%{REQUEST_FILENAME} !favicon.ico
+
+	# For requests that are not actual files
+	# rewrite to index.php?/PATH
+	RewriteRule ^(.*)$ /app/site/site.php?url=/$1 [L,QSA]
+</IfModule>
+
+## This ruleset ensures core Koken JS and CSS are cached
+## for 1 year. These files are always timestamped in new releases,
+## so it is safe to cache them for long periods of time.
+<IfModule mod_expires.c>
+	ExpiresActive On
+	# Set default to 0 so .php/API requests are not cached
+	ExpiresDefault A0
+
+	# Do not cache MP4s, as Chrome and others tend to fail on first playback
+	<FilesMatch "\.mp4$">
+		<IfModule mod_headers.c>
+			ExpiresActive Off
+			Header set Cache-Control "private, no-cache, no-store, proxy-revalidate, no-transform"
+			Header set Pragma "no-cache"
+		</IfModule>
+	</FilesMatch>
+
+	# Console javascript and CSS is timestamped and can be aggressively cached
+	<FilesMatch "console_.*\.(js|css)$">
+		ExpiresByType text/javascript "access plus 1 year"
+		ExpiresByType application/javascript "access plus 1 year"
+		ExpiresByType application/x-javascript "access plus 1 year"
+		ExpiresByType text/css "access plus 1 year"
+	</FilesMatch>
+
+	# Cached images are timestamped and can be aggressively cached
+	<FilesMatch "\.\d{9,10}\.(jpg|jpeg|gif|png|JPG|JPEG|GIF|PNG)$">
+		ExpiresDefault "access plus 1 year"
+	</FilesMatch>
+</IfModule>
+
+## End Rewrite Rules
+
+############################################
+#######	 END KOKEN .htaccess rules  ########
+############################################
