@@ -1,0 +1,14 @@
+# ALLOW USER BY IP
+<Limit GET POST>
+	order deny,allow
+	#deny from all
+##	allow access from 192.168.x.xxx
+	allow from 192.168.
+##	allow access from 192.168.1.xxx
+#	allow from 192.168.1.
+##	allow access from one specific IP-adress
+#	allow from 192.168.1.109
+</Limit>
+
+## Redirect any other to a domail/page of your choise
+ErrorDocument 403 http://google.com
